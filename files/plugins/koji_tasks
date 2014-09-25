@@ -1,0 +1,84 @@
+#!/bin/bash
+
+if [ "$1" == "suggest" ]; then
+    echo "tasks_total"
+    echo "tasks_pending"
+    echo "tasks_open"
+    echo "tasks_closed"
+    echo "tasks_failed"
+    exit 0
+fi
+
+case $0 in
+    *_tasks_total)
+        [ "$1" == "config" ] && \
+            (
+                echo "graph_title Total Koji Tasks"; \
+                echo 'graph_category koji'; \
+                echo "graph_info This graph shows the total number of Koji tasks throughout history"; \
+                echo 'tasks_total.label Tasks total'; \
+                echo "tasks_total.type GAUGE"; \
+            ) || (
+                tasks=$[ `echo "select id from task where method = 'build' or method = 'newrepo';" | psql koji koji | wc -l` - 4 ]; \
+                echo "tasks_total.value $tasks"; \
+            )
+    ;;
+
+    *_tasks_pending)
+        [ "$1" == "config" ] && \
+            (
+                echo "graph_title Pending Koji Tasks"; \
+                echo 'graph_category koji'; \
+                echo "graph_info This graph shows the number of Koji tasks currently pending"; \
+                echo 'tasks_pending.label Pending tasks'; \
+                echo "tasks_pending.type GAUGE"; \
+            ) || (
+                tasks=$[ `echo "select id from task where ( method = 'build' or method = 'newrepo' ) and state = 0;" | psql koji koji | wc -l` - 4 ]; \
+                echo "tasks_pending.value $tasks"; \
+            )
+    ;;
+
+    *_tasks_open)
+        [ "$1" == "config" ] && \
+            (
+                echo "graph_title Running Koji Tasks"; \
+                echo 'graph_category koji'; \
+                echo "graph_info This graph shows the number of Koji tasks currently running"; \
+                echo 'tasks_open.label Tasks open'; \
+                echo "tasks_open.type GAUGE"; \
+            ) || (
+                tasks=$[ `echo "select id from task where ( method = 'build' or method = 'newrepo' ) and state = 1;" | psql koji koji | wc -l` - 4 ]; \
+                echo "tasks_open.value $tasks"; \
+            )
+    ;;
+
+    *_tasks_closed)
+        [ "$1" == "config" ] && \
+            (
+                echo "graph_title Successful Koji Tasks"; \
+                echo 'graph_category koji'; \
+                echo "graph_info This graph shows the total number of successfully completed Koji tasks over history"; \
+                echo 'tasks_closed.label Tasks closed'; \
+                echo "tasks_closed.type GAUGE"; \
+            ) || (
+                tasks=$[ `echo "select id from task where ( method = 'build' or method = 'newrepo' ) and state = 2;" | psql koji koji | wc -l` - 4 ]; \
+                echo "tasks_closed.value $tasks"; \
+            )
+    ;;
+
+    *_tasks_failed)
+        [ "$1" == "config" ] && \
+            (
+                echo "graph_title Failed Koji Tasks"; \
+                echo 'graph_category koji'; \
+                echo "graph_info This graph shows the total number of failed Koji tasks over history"; \
+                echo 'tasks_failed.label Tasks failed'; \
+                echo "tasks_failed.type GAUGE"; \
+            ) || (
+                tasks=$[ `echo "select id from task where ( method = 'build' or method = 'newrepo' ) and state = 5;" | psql koji koji | wc -l` - 4 ]; \
+                echo "tasks_failed.value $tasks"; \
+            )
+    ;;
+
+esac
+

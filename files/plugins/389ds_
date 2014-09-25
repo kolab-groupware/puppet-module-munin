@@ -1,0 +1,557 @@
+#!/bin/sh
+
+# Copyright (C) 2011 Jeroen van Meeuwen (Kolab Systems)
+#                       <vanmeeuwen@kolabsys.com>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU Library General Public License as published by
+# the Free Software Foundation; version 3, or at your option, any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Library General Public License for more details.
+#
+# You should have received a copy of the GNU Library General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+#
+
+#
+# Plugin to monitor 389 Directory Server
+#
+# Installation node:
+# [389ds_*]
+# binddn cn=Directory Manager
+# bindpw Passw0rd
+#
+# Magic markers (optional - only used by munin-config and some
+# installation scripts):
+#
+#%# family=contrib
+#%# capabilities=autoconf
+
+MODE=`basename $0 | sed -r -e 's/^389ds_//g'`
+
+[ -z "${host}" ] && host='localhost'
+[ -z "${binddn}" ] && binddn='cn=Directory Manager'
+[ -z "${bindpw}" ] && bindpw='SomePass'
+
+function list_database_headers() {
+        ldapsearch -x \
+            -h "${host}" \
+            -D "${binddn}" \
+            -w "${bindpw}" \
+            -LLL \
+            -s base \
+            -b "cn=database,cn=monitor,cn=ldbm database,cn=plugins,cn=config" | \
+            while read line; do
+                case $line in
+                    nsslapd-db-*)
+                        echo $line | sed -e 's/^nsslapd-//g' -e 's/-/_/g'
+                    ;;
+                esac
+            done
+    }
+
+function list_database_statistics() {
+        ldapsearch -x \
+            -h "${host}" \
+            -D "${binddn}" \
+            -w "${bindpw}" \
+            -LLL \
+            -s base \
+            -b "cn=database,cn=monitor,cn=ldbm database,cn=plugins,cn=config" | \
+            while read line; do
+                case $line in
+                    nsslapd-db-*)
+                        echo $line
+                    ;;
+                esac
+            done | cut -d':' -f1
+
+        ldapsearch -x \
+            -h "${host}" \
+            -D "${binddn}" \
+            -w "${bindpw}" \
+            -LLL \
+            -b "cn=ldbm database,cn=plugins,cn=config" \
+            "(cn=monitor)" | \
+            while read line; do
+                case $line in
+                    dbcachehits)
+                        echo $line
+                    ;;
+                    dbcachetries)
+                        echo $line
+                    ;;
+                    dbcachehitratio)
+                        echo $line
+                    ;;
+                    dbcachepagein)
+                        echo $line
+                    ;;
+                    dbcachepageout)
+                        echo $line
+                    ;;
+                    dbcacheroevict)
+                        echo $line
+                    ;;
+                    dbcacherwevict)
+                        echo $line
+                    ;;
+                    entrycachehits)
+                        echo $line
+                    ;;
+                    entrycachetries)
+                        echo $line
+                    ;;
+                    entrycachehitratio)
+                        echo $line
+                    ;;
+                    currententrycachesize)
+                        echo $line
+                    ;;
+                    maxentrycachesize)
+                        echo $line
+                    ;;
+                    currententrycachecount)
+                        echo $line
+                    ;;
+                    maxentrycachecount)
+                        echo $line
+                    ;;
+                    dncachehits)
+                        echo $line
+                    ;;
+                    dncachetries)
+                        echo $line
+                    ;;
+                    dncachehitratio)
+                        echo $line
+                    ;;
+                    currentdncachesize)
+                        echo $line
+                    ;;
+                    maxdncachesize)
+                        echo $line
+                    ;;
+                    currentdncachecount)
+                        echo $line
+                    ;;
+                    maxdncachecount)
+                        echo $line
+                    ;;
+                    dbfilename-*)
+                        echo $line
+                    ;;
+                    dbfilecachehit-*)
+                        echo $line
+                    ;;
+                    dbfilecachemiss-*)
+                        echo $line
+                    ;;
+                    dbfilepagein-*)
+                        echo $line
+                    ;;
+                    dbfilepageout-*)
+                        echo $line
+                    ;;
+                esac
+            done | cut -d':' -f1
+    }
+
+function list_databases() {
+        echo $(ldapsearch -x \
+                -h "${host}" \
+                -D "${binddn}" \
+                -w "${bindpw}" \
+                -LLL \
+                -b "cn=ldbm database,cn=plugins,cn=config" \
+                -s one \
+                "(&(objectclass=nsbackendinstance)(!(cn=NetscapeRoot)))" \
+                cn | \
+                grep ^cn | \
+                awk '{print $2}' | \
+                sort
+            )
+
+    }
+
+function list_vlv_indexes() {
+        if [ -z "$1" ]; then
+            base_dn="cn=ldbm database,cn=plugins,cn=config"
+        else
+            base_dn="cn=$1,cn=ldbm database,cn=plugins,cn=config"
+        fi
+
+        for vlv_index in `ldapsearch -x \
+                -h "${host}" \
+                -D "${binddn}" \
+                -w "${bindpw}" \
+                -LLL \
+                -b "${base_dn}" \
+                "(objectClass=vlvIndex)" \
+                cn | \
+                grep ^cn | \
+                cut -d':' -f2 | \
+                sed -e 's/^\s//g' -e "s/\s/_/g" | \
+                sort`; do
+            echo "${vlv_index}"
+        done
+    }
+
+function vlv_index_uses() {
+        if [ -z "$1" ]; then
+            exit 1
+        else
+            if [ -z "$2" ]; then
+                base_dn="cn=ldbm database,cn=plugins,cn=config"
+            else
+                base_dn="cn=$2,cn=ldbm database,cn=plugins,cn=config"
+            fi
+        fi
+
+        for vlv_uses in `ldapsearch -x \
+                -h "${host}" \
+                -D "${binddn}" \
+                -w "${bindpw}" \
+                -LLL \
+                -b "${base_dn}" \
+                "(&(objectClass=vlvIndex)(cn=$(echo $1 | sed -e 's/_/ /g')))" \
+                vlvUses | \
+                grep ^vlvUses | \
+                awk '{print $2}'`; do
+            echo "${vlv_uses}"
+        done
+    }
+
+# # database, monitor, ldbm database, plugins, config
+# dn: cn=database,cn=monitor,cn=ldbm database,cn=plugins,cn=config
+# objectClass: top
+# objectClass: extensibleObject
+# cn: database
+# nsslapd-db-abort-rate: 0
+# nsslapd-db-active-txns: 0
+# nsslapd-db-cache-hit: 187695695
+# nsslapd-db-cache-try: 189536810
+# nsslapd-db-cache-region-wait-rate: 14
+# nsslapd-db-cache-size-bytes: 10005032
+# nsslapd-db-clean-pages: 1150
+# nsslapd-db-commit-rate: 3846
+# nsslapd-db-deadlock-rate: 0
+# nsslapd-db-dirty-pages: 28
+# nsslapd-db-hash-buckets: 1031
+# nsslapd-db-hash-elements-examine-rate: 363875432
+# nsslapd-db-hash-search-rate: 191377051
+# nsslapd-db-lock-conflicts: 33
+# nsslapd-db-lock-region-wait-rate: 10643
+# nsslapd-db-lock-request-rate: 327597407
+# nsslapd-db-lockers: 131
+# nsslapd-db-configured-locks: 10000
+# nsslapd-db-current-locks: 28
+# nsslapd-db-max-locks: 168
+# nsslapd-db-current-lock-objects: 28
+# nsslapd-db-max-lock-objects: 106
+# nsslapd-db-log-bytes-since-checkpoint: 0
+# nsslapd-db-log-region-wait-rate: 41
+# nsslapd-db-log-write-rate: 47800049
+# nsslapd-db-longest-chain-length: 8
+# nsslapd-db-objects-locked: 189536810
+# nsslapd-db-page-create-rate: 61
+# nsslapd-db-page-read-rate: 1841116
+# nsslapd-db-page-ro-evict-rate: 1839969
+# nsslapd-db-page-rw-evict-rate: 0
+# nsslapd-db-page-trickle-rate: 0
+# nsslapd-db-page-write-rate: 10990
+# nsslapd-db-pages-in-use: 1178
+# nsslapd-db-txn-region-wait-rate: 0
+#
+
+case $1 in
+    config)
+        echo "graph_category ldap"
+        if [ "$MODE" == "vlv" ]; then
+            echo "graph_title Virtual List View Uses"
+            echo "graph_vlabel uses"
+            echo -n "graph_order "
+            for database in `list_databases`; do
+                for vlv_index in `list_vlv_indexes ${database}`; do
+                    echo -n "${database}_${vlv_index} "
+                done
+            done
+            echo ""
+            for database in `list_databases`; do
+                for vlv_index in `list_vlv_indexes ${database}`; do
+                    echo "${database}_${vlv_index}.label ${database}: $(echo ${vlv_index} | sed -e "s/_/ /g")"
+                done
+            done
+        elif [ "$MODE" == "database" ]; then
+            echo "multigraph 389ds_database.aborts"
+            echo "graph_title Database aborts"
+            echo "multigraph 389ds_database.cache_hits"
+            echo "graph_title Database Cache hits"
+            echo "multigraph 389ds_database.cache_size"
+            echo "graph_title Database Cache size"
+            echo "multigraph 389ds_database.cache_tries"
+            echo "graph_title Database Cache tries"
+            echo "multigraph 389ds_database.commit_rate"
+            echo "graph_title Database Commit Rate"
+            echo "multigraph 389ds_database.commit_rate"
+            echo "graph_title Database Commit Rate"
+            echo "multigraph 389ds_database.clean_pages"
+            echo "graph_title Database Clean Pages"
+            echo "multigraph 389ds_database.dirty_pages"
+            echo "graph_title Database Dirty Pages"
+
+            for database in `list_databases`; do
+                echo "multigraph 389ds_database.${database}"
+                echo "graph_title ${database}"
+                # Should probably be something along the lines of:
+                #echo "graph_title Items in Slab: 12 (1376 Bytes)
+                echo "graph_info unknown"
+                echo "graph_args --base 1000 --lower-limit 0"
+                echo "graph_category ldap"
+                #echo "graph_vlabel Items per Slab"
+                #echo "number.info This is the amount of items stored in this slab"
+                #echo "number.min 0"
+                #echo "number.label Items"
+            done
+
+# nsslapd-db-cache-region-wait-rate: 14
+# nsslapd-db-clean-pages: 1150
+# nsslapd-db-commit-rate: 3846
+# nsslapd-db-deadlock-rate: 0
+# nsslapd-db-dirty-pages: 28
+# nsslapd-db-hash-buckets: 1031
+# nsslapd-db-hash-elements-examine-rate: 363875432
+# nsslapd-db-hash-search-rate: 191377051
+# nsslapd-db-lock-conflicts: 33
+# nsslapd-db-lock-region-wait-rate: 10643
+# nsslapd-db-lock-request-rate: 327597407
+# nsslapd-db-lockers: 131
+# nsslapd-db-configured-locks: 10000
+# nsslapd-db-current-locks: 28
+# nsslapd-db-max-locks: 168
+# nsslapd-db-current-lock-objects: 28
+# nsslapd-db-max-lock-objects: 106
+# nsslapd-db-log-bytes-since-checkpoint: 0
+# nsslapd-db-log-region-wait-rate: 41
+# nsslapd-db-log-write-rate: 47800049
+# nsslapd-db-longest-chain-length: 8
+# nsslapd-db-objects-locked: 189536810
+# nsslapd-db-page-create-rate: 61
+# nsslapd-db-page-read-rate: 1841116
+# nsslapd-db-page-ro-evict-rate: 1839969
+# nsslapd-db-page-rw-evict-rate: 0
+# nsslapd-db-page-trickle-rate: 0
+# nsslapd-db-page-write-rate: 10990
+# nsslapd-db-pages-in-use: 1178
+# nsslapd-db-txn-region-wait-rate: 0
+
+
+# # monitor, NetscapeRoot, ldbm database, plugins, config
+# dn: cn=monitor,cn=NetscapeRoot,cn=ldbm database,cn=plugins,cn=config
+# objectClass: top
+# objectClass: extensibleObject
+# cn: monitor
+# database: ldbm database
+# readonly: 0
+# entrycachehits: 61808
+# entrycachetries: 61995
+# entrycachehitratio: 99
+# currententrycachesize: 542546
+# maxentrycachesize: 10485760
+# currententrycachecount: 169
+# maxentrycachecount: -1
+# dncachehits: 0
+# dncachetries: 169
+# dncachehitratio: 0
+# currentdncachesize: 54771
+# maxdncachesize: 10485760
+# currentdncachecount: 169
+# maxdncachecount: -1
+# dbfilename-6: NetscapeRoot/numsubordinates.db4
+# dbfilecachehit-6: 1
+# dbfilecachemiss-6: 2
+# dbfilepagein-6: 2
+# dbfilepageout-6: 0
+# dbfilename-7: NetscapeRoot/parentid.db4
+# dbfilecachehit-7: 3
+# dbfilecachemiss-7: 2
+# dbfilepagein-7: 2
+# dbfilepageout-7: 0
+# dbfilename-8: NetscapeRoot/uid.db4
+# dbfilecachehit-8: 1
+# dbfilecachemiss-8: 2
+# dbfilepagein-8: 2
+# dbfilepageout-8: 0
+# dbfilename-18: NetscapeRoot/ancestorid.db4
+# dbfilecachehit-18: 65
+# dbfilecachemiss-18: 6
+# dbfilepagein-18: 6
+# dbfilepageout-18: 0
+# dbfilename-19: NetscapeRoot/aci.db4
+# dbfilecachehit-19: 1
+# dbfilecachemiss-19: 2
+# dbfilepagein-19: 2
+# dbfilepageout-19: 0
+# dbfilename-21: NetscapeRoot/objectclass.db4
+# dbfilecachehit-21: 113
+# dbfilecachemiss-21: 3
+# dbfilepagein-21: 3
+# dbfilepageout-21: 0
+# dbfilename-22: NetscapeRoot/entryrdn.db4
+# dbfilecachehit-22: 19923
+# dbfilecachemiss-22: 34
+# dbfilepagein-22: 34
+# dbfilepageout-22: 0
+# dbfilename-25: NetscapeRoot/id2entry.db4
+# dbfilecachehit-25: 1367
+# dbfilecachemiss-25: 124
+# dbfilepagein-25: 124
+# dbfilepageout-25: 2
+#
+#
+#
+# # monitor, userRoot, ldbm database, plugins, config
+# dn: cn=monitor,cn=userRoot,cn=ldbm database,cn=plugins,cn=config
+# objectClass: top
+# objectClass: extensibleObject
+# cn: monitor
+# database: ldbm database
+# readonly: 0
+# entrycachehits: 1469944
+# entrycachetries: 1767466
+# entrycachehitratio: 83
+# currententrycachesize: 10482486
+# maxentrycachesize: 10485760
+# currententrycachecount: 2726
+# maxentrycachecount: -1
+# dncachehits: 114138
+# dncachetries: 296495
+# dncachehitratio: 38
+# currentdncachesize: 10485726
+# maxdncachesize: 10485760
+# currentdncachecount: 62778
+# maxdncachecount: -1
+# dbfilename-0: userRoot/mailHost.db4
+# dbfilecachehit-0: 1263
+# dbfilecachemiss-0: 2
+# dbfilepagein-0: 2
+# dbfilepageout-0: 66
+# dbfilename-1: userRoot/nscpEntryDN.db4
+# dbfilecachehit-1: 126
+# dbfilecachemiss-1: 3
+# dbfilepagein-1: 3
+# dbfilepageout-1: 49
+# dbfilename-2: userRoot/parentid.db4
+# dbfilecachehit-2: 265
+# dbfilecachemiss-2: 2
+# dbfilepagein-2: 2
+# dbfilepageout-2: 77
+# dbfilename-3: userRoot/sn.db4
+# dbfilecachehit-3: 3915
+# dbfilecachemiss-3: 36
+# dbfilepagein-3: 36
+# dbfilepageout-3: 651
+# dbfilename-4: userRoot/givenName.db4
+# dbfilecachehit-4: 3616
+# dbfilecachemiss-4: 19
+# dbfilepagein-4: 19
+# dbfilepageout-4: 616
+# dbfilename-5: userRoot/numsubordinates.db4
+# dbfilecachehit-5: 212
+# dbfilecachemiss-5: 3
+# dbfilepagein-5: 3
+# dbfilepageout-5: 0
+# dbfilename-9: userRoot/cn.db4
+# dbfilecachehit-9: 8363
+# dbfilecachemiss-9: 1187
+# dbfilepagein-9: 1187
+# dbfilepageout-9: 1083
+# dbfilename-10: userRoot/ancestorid.db4
+# dbfilecachehit-10: 19705
+# dbfilecachemiss-10: 1751
+# dbfilepagein-10: 1751
+# dbfilepageout-10: 462
+# dbfilename-11: userRoot/member.db4
+# dbfilecachehit-11: 5
+# dbfilecachemiss-11: 4
+# dbfilepagein-11: 4
+# dbfilepageout-11: 0
+# dbfilename-12: userRoot/uniquemember.db4
+# dbfilecachehit-12: 17
+# dbfilecachemiss-12: 7
+# dbfilepagein-12: 7
+# dbfilepageout-12: 0
+# dbfilename-13: userRoot/uid.db4
+# dbfilecachehit-13: 11290
+# dbfilecachemiss-13: 351
+# dbfilepagein-13: 351
+# dbfilepageout-13: 95
+# dbfilename-14: userRoot/mail.db4
+# dbfilecachehit-14: 239108
+# dbfilecachemiss-14: 4960
+# dbfilepagein-14: 4960
+# dbfilepageout-14: 4672
+# dbfilename-15: userRoot/mailAlternateAddress.db4
+# dbfilecachehit-15: 59804
+# dbfilecachemiss-15: 85
+# dbfilepagein-15: 85
+# dbfilepageout-15: 51
+# dbfilename-17: userRoot/nsuniqueid.db4
+# dbfilecachehit-17: 6976
+# dbfilecachemiss-17: 96
+# dbfilepagein-17: 96
+# dbfilepageout-17: 96
+# dbfilename-20: userRoot/aci.db4
+# dbfilecachehit-20: 1
+# dbfilecachemiss-20: 2
+# dbfilepagein-20: 2
+# dbfilepageout-20: 0
+# dbfilename-23: userRoot/objectclass.db4
+# dbfilecachehit-23: 837250
+# dbfilecachemiss-23: 1023
+# dbfilepagein-23: 1023
+# dbfilepageout-23: 1245
+# dbfilename-24: userRoot/entryrdn.db4
+# dbfilecachehit-24: 47591948
+# dbfilecachemiss-24: 152985
+# dbfilepagein-24: 152985
+# dbfilepageout-24: 280
+# dbfilename-26: userRoot/vlv#bymccoupeopledctest90dckolabsysdccom.db4
+# dbfilecachehit-26: 135038710
+# dbfilecachemiss-26: 1194436
+# dbfilepagein-26: 1194437
+# dbfilepageout-26: 797
+# dbfilename-27: userRoot/id2entry.db4
+# dbfilecachehit-27: 3844555
+# dbfilecachemiss-27: 483767
+# dbfilepagein-27: 483767
+# dbfilepageout-27: 508
+#
+        fi
+        exit 0
+    ;;
+
+    autoconf)
+        echo "yes"
+        exit 0
+    ;;
+esac
+
+case $MODE in
+    vlv)
+        for database in `list_databases`; do
+            for vlv_index in `list_vlv_indexes ${database}`; do
+                echo "${database}_${vlv_index}.value $(vlv_index_uses ${vlv_index} ${database})"
+            done
+        done
+    ;;
+    database)
+        for database in `list_databases`; do
+            echo "${database}"
+        done
+    ;;
+esac

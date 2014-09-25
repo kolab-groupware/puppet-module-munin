@@ -1,0 +1,32 @@
+#!/bin/bash
+
+if [ "$1" = "config" ]; then
+    echo "graph_title MySQL Queries Average"
+    echo 'graph_category mysql'
+    echo "graph_info This graph shows the MySQL average queries per second"
+    echo 'mysql_queries_average.label Queries'
+    echo "mysql_queries_average.type GAUGE"
+    exit 0
+fi
+
+# Depending on the MySQL version, mysql status displays the following relevant:
+#
+# - uptime, queries
+# - uptime, questions
+
+uptime=`mysql ${mysqlopts} -e 'show status\g' | grep -E "^Uptime[^_]\s*" | awk '{print $2}'`
+questions=`mysql ${mysqlopts} -e 'show status\g' | grep -E "^Questions[^_]\s*" | awk '{print $2}'`
+queries=`mysql ${mysqlopts} -e 'show status\g' | grep -E "^Queries[^_]\s*" | awk '{print $2}'`
+
+[ -z "$questions" ] && questions=0
+[ -z "$queries" ] && queries=0
+
+if [ $questions -ge $queries ]; then
+    # Here we assume we need questions here
+    real_queries=$questions
+else
+    real_queries=$queries
+fi
+
+echo -n "mysql_queries_average.value "
+echo "$real_queries $uptime" | awk '{print $1/$2}'

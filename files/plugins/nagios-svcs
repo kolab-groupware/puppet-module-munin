@@ -1,0 +1,39 @@
+#!/bin/sh
+
+#%# family=contrib
+#%# capabilities=autoconf
+
+BASEPARAM=`basename $0 | sed -r -e 's/^cyrus-imapd_//'`
+MODE=`echo $BASEPARAM | sed -r -e 's/^(.*)_.*/\1/'`
+TARGET=`echo $BASEPARAM | sed -r -e 's/^(partition|mbox|logins)//' -e 's/_//'`
+
+case $1 in
+    config)
+        echo "graph_category nagios"
+        echo "graph_title Services Checked"
+        echo "graph_vlabel Services"
+        echo "graph_order ok warning unknown critical total"
+        echo "graph_args --units-exponent 0"
+        echo "graph_scale no"
+        echo "ok.label OK"
+        echo "warning.label Warning"
+        echo "unknown.label Unknown"
+        echo "critical.label Critical"
+        echo "total.label total"
+        exit 0
+    ;;
+
+    autoconf)
+        echo "yes"
+        exit 0
+    ;;
+esac
+
+IFS=$'\r\n' stats=($(nagiostats --mrtg --data=NUMSVCOK,NUMSVCWARN,NUMSVCUNKN,NUMSVCCRIT,NUMSERVICES))
+
+echo "ok.value ${stats[0]}"
+echo "warning.value ${stats[1]}"
+echo "unknown.value ${stats[2]}"
+echo "critical.value ${stats[3]}"
+echo "total.value ${stats[4]}"
+

@@ -1,0 +1,144 @@
+#!/bin/sh
+#
+# Plugin to monitor the Berkeley DB stats.
+#
+# Usage: Link or copy into /etc/munin/node.d/
+#
+# Parameters
+#     env.load_warn <warning load>
+#     env.load_crit <critical load>
+#
+# Magic markers (optional - only used by munin-config and some
+# installation scripts):
+#
+#%# family=auto
+#%# capabilities=autoconf
+
+# Include configs
+[ -f "$MUNIN_LIBDIR/plugins/plugin.sh" ] && . $MUNIN_LIBDIR/plugins/plugin.sh
+
+BASEPARAM=`basename $0 | sed -r -e 's/^bdbstat_//'`
+MODE=`echo $BASEPARAM | sed -r -e 's/^(.*)_.*/\1/'`
+TARGET=`echo $BASEPARAM | sed -r -e 's/^(lockers|mutex)//' -e 's/_//'`
+
+# If run with the "autoconf"-parameter, give our opinion on wether we
+# should be run on this system or not. This is optinal, and only used by
+# munin-config. In the case of this plugin, we should most probably
+# always be included.
+if [ "$1" = "autoconf" ]; then
+    echo yes
+    exit 0
+fi
+
+get_locking_values () {
+	LOCKING_STATUS=$(/usr/bin/db_stat -c -h ${bdb_home})
+	
+	# Max values
+	MAX_LOCKS_POSSIBLE=$(echo "${LOCKING_STATUS}" | grep "Maximum number of locks possible" | awk '{print $1}')
+	MAX_LOCKERS_POSSIBLE=$(echo "${LOCKING_STATUS}" | grep "Maximum number of lockers possible" | awk '{print $1}')
+	MAX_LOCKOBJ_POSSIBLE=$(echo "${LOCKING_STATUS}" |  grep "Maximum number of lock objects possible" | awk '{print $1}')
+
+	# Current values
+	CUR_LOCKS=$(echo "${LOCKING_STATUS}" | grep "Number of current locks" | awk '{print $1}')
+	CUR_LOCKERS=$(echo "${LOCKING_STATUS}" | grep "Number of current lockers" | awk '{print $1}')
+	CUR_LOCKOBJ=$(echo "${LOCKING_STATUS}" |  grep "Number of current lock objects" | awk '{print $1}')
+}
+
+get_mutex_values() {
+    MUTEX_STATUS=$(/usr/bin/db_stat -x -h ${bdb_home})
+
+    # Max value
+    MAX_MUTEX=$(echo "${MUTEX_STATUS}" | grep "Mutex total count" | awk '{print $1}')
+    CUR_MUTEX=$(echo "${MUTEX_STATUS}" | grep "Mutex in-use count" | awk '{print $1}')
+}
+
+# If run with the "config"-parameter, give out information on how the
+# graphs should look.
+
+[ -z "${locks_warning}" ] && locks_warning=85
+[ -z "${locks_critical}" ] && locks_critical=95
+[ -z "${mutex_warning}" ] && mutex_warning=85
+[ -z "${mutex_critical}" ] && mutex_critical=95
+
+if [ "$1" = "config" ]; then
+
+    if [ "${MODE}" == "lockers" ]; then
+        get_locking_values
+        LOCKS_WARN=$(echo "0${MAX_LOCKS_POSSIBLE} * 0.${locks_warning}" | bc)
+        LOCKS_CRIT=$(echo "0${MAX_LOCKS_POSSIBLE} * 0.${locks_critical}" | bc)
+
+        # The title of the graph
+        echo 'graph_title Berkeley DB locking status'
+        echo 'graph_args --base 1000 -l 0'
+        # The Y-axis label
+        echo 'graph_vlabel load'
+        # We want Cur/Min/Avg/Max unscaled ( 10000 locks is not 10k locks)
+        echo 'graph_scale no'
+        # Graph category. Defaults to 'other'
+        echo 'graph_category BerkeleyDB'
+        # The fields. "label" is used in the legend. "label" is the only required subfield.
+        echo 'locks.label Locks'
+        echo 'locks_max.label Maximum Locks'
+        echo 'lockers.label Lockers'
+        echo 'lockobjects.label Lock Objects'
+        echo "locks.warning ${LOCKS_WARN}"
+        echo "locks.critical ${LOCKS_CRIT}"
+        echo 'graph_info The information about Berkeley DB locking status.'
+        echo 'locks.info Number of current locks'
+        echo 'locks_max.info Maximum number of locks'
+        echo 'lockers.info Number of current lockers'
+        echo 'lockobjects.info Number of current lock objects'
+        echo 'locks.type GAUGE'
+        echo 'lockers.type GAUGE'
+        echo 'lockobjects.type GAUGE'
+
+        # Last, if run with the "config"-parameter, quit here (don't
+        # display any data)
+        exit 0
+    elif [ "${MODE}" == "mutex" ]; then
+        get_mutex_values
+        MUTEX_WARN=$(echo "0${MAX_MUTEX} * 0.${mutex_warning}" | bc)
+        MUTEX_CRIT=$(echo "0${MAX_MUTEX} * 0.${mutex_critical}" | bc)
+
+        # The title of the graph
+        echo 'graph_title Berkeley DB mutex status'
+        echo 'graph_args --base 1000 -l 0'
+        # The Y-axis label
+        echo 'graph_vlabel load'
+        # We want Cur/Min/Avg/Max unscaled ( 10000 locks is not 10k locks)
+        echo 'graph_scale no'
+        # Graph category. Defaults to 'other'
+        echo 'graph_category BerkeleyDB'
+        # The fields. "label" is used in the legend. "label" is the only required subfield.
+        echo 'inuse.label Mutexes in use'
+        echo 'max.label Maximum Mutexes'
+        echo "inuse.warning ${MUTEX_WARN}"
+        echo "inuse.critical ${MUTEX_CRIT}"
+        echo 'graph_info The information about Berkeley DB mutex status.'
+        echo 'inuse.info Number of current mutexes in use'
+        echo 'max.info Maximum number of mutexes'
+        echo 'inuse.type GAUGE'
+
+        # Last, if run with the "config"-parameter, quit here (don't
+        # display any data)
+        exit 0
+    fi
+fi
+
+if [ "${MODE}" == "lockers" ]; then
+    get_locking_values
+
+    # If not run with any parameters at all (or only unknown ones), do the
+    # real work - i.e. display the data. Almost always this will be
+    # "value" subfield for every data field.
+
+    echo "locks.value ${CUR_LOCKS}"
+    echo "locks_max.value ${MAX_LOCKS_POSSIBLE}"
+    echo "lockers.value ${CUR_LOCKERS}"
+    echo "lockobjects.value ${CUR_LOCKOBJ}"
+elif [ "${MODE}" == "mutex" ]; then
+    get_mutex_values
+
+    echo "inuse.value ${CUR_MUTEX}"
+    echo "max.value ${MAX_MUTEX}"
+fi

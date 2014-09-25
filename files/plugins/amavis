@@ -1,0 +1,86 @@
+#!/bin/sh
+#
+# Plugin to monitor the amavis mail filter.
+#
+# Usage: Place in /etc/lrrd/client.d/ (or link it there  using ln -s)
+#
+# Parameters understood:
+#
+#   config   (required)
+#   autoconf (optional)
+#
+# Config variables:
+#
+#       amavislog    - file where amavis logs are written
+#
+
+mktempfile () {
+    mktemp -p /tmp/ $1
+}
+
+AMAVIS_LOG=/var/log/maillog
+LOGTAIL=cat
+STATEFILE=/var/lib/munin/plugin-state/amavis.offset
+
+if [ "$amavislog"  ]; then AMAVIS_LOG=$amavislog ; fi
+
+if [ "$1" = "autoconf" ]; then
+        if [ -f "${AMAVIS_LOG}" -a -n "${LOGTAIL}" -a -x "${LOGTAIL}" ] ; then
+        echo yes
+        exit 0
+    else
+        echo no
+        exit 1
+    fi
+fi
+
+if [ "$1" = "config" ]; then
+    echo 'graph_title Amavis filter statistics'
+    echo 'graph_order virus spam_maybe spam_sure total'
+    echo 'graph_vlabel nb'
+    echo 'virus.label virus'
+    echo 'virus.type COUNTER'
+    echo 'clean.label clean'
+    echo 'clean.type COUNTER'
+    echo 'spam_maybe.label probably spam'
+    echo 'spam_maybe.type COUNTER'
+    echo 'spam_sure.label surely spam'
+    echo 'spam_sure.type COUNTER'
+    echo 'noqueue.label blocked'
+    echo 'noqueue.type COUNTER'
+    echo 'total.label total'
+    echo 'total.type COUNTER'
+    exit 0
+fi
+
+total=U
+virus=U
+clean=U
+spamm=U
+spams=U
+noqueue=U
+
+TEMP_FILE=`mktempfile munin-amavis.XXXXXX`
+
+if [ -n "$TEMP_FILE" -a -f "$TEMP_FILE" ]; then
+    cat ${AMAVIS_LOG} | grep -E '(amavis\[.*\]:|NOQUEUE.*blocked using.*spamhaus.*)' > ${TEMP_FILE}
+    total=`cat ${TEMP_FILE} | wc -l`
+    virus=`grep INFECTED ${TEMP_FILE} | wc -l`
+    clean=`grep 'Passed CLEAN' ${TEMP_FILE} | wc -l`
+    spamm=`grep 'Passed CLEAN.*Hits: [2-6][.]' ${TEMP_FILE} | wc -l`
+    spams=`grep 'Blocked SPAM' ${TEMP_FILE} | wc -l`
+    noqueue=`grep 'NOQUEUE' ${TEMP_FILE} | wc -l`
+
+    /bin/rm -f $TEMP_FILE
+
+    # Spamm is also Passed CLEAN
+    clean=$[ ${clean} - ${spamm} ]
+fi
+
+echo "virus.value ${virus}"
+echo "clean.value ${clean}"
+echo "spam_maybe.value ${spamm}"
+echo "spam_sure.value ${spams}"
+echo "noqueue.value ${noqueue}"
+echo "total.value ${total}"
+

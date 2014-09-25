@@ -1,0 +1,3 @@
+[apache_*]
+env.url http://127.0.0.1:%d/apache-status?auto
+env.ports 80

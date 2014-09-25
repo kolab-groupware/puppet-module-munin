@@ -1,0 +1,8 @@
+# Managed by Puppet
+
+[amavis*]
+user root
+env.MUNIN_MKTEMP /bin/mktemp -p /tmp/ $1
+env.amavislog /var/log/maillog
+env.amavis_db_home /var/spool/amavisd/db
+

@@ -1,0 +1,43 @@
+#!/bin/bash
+#
+# Copyright 2009 (C) Operator Groep Delft, http://www.ogd.nl
+#
+# Author(s):
+#     Jeroen van Meeuwen <j.van.meeuwen@ogd.nl>
+#     Sandro Janke <s.janke@ogd.nl>
+#
+# This (tiny) piece of "software" is GPLv3+
+#
+# This Munin plugin tracks the number of connections to a Zarafa server,
+# by counting ESTABLISHED connections.
+#
+# It divides categories such as webmail (port 80/443), outlook (connects
+# to process "zarafa-server", or imap connections (connects to the process
+# that shows up in `netstat -anp` as "zarafa-gatewa".
+#
+
+case $1 in
+    config)
+        cat <<'EOM'
+graph_category Zarafa
+graph_title Zarafa Connections
+graph_vlabel connections
+zarafa_connections.label zarafa connections
+imap_connections.label imap connections
+outlook_connections.label outlook connections
+webmail_connections.label webmail connections
+EOM
+        exit 0
+    ;;
+esac
+
+imap_connections=`netstat -anp | grep zarafa-gatewa | grep ESTABLISHED | wc -l`
+outlook_connections=`netstat -anp | grep zarafa-server | grep ESTABLISHED | wc -l`
+webmail_connections=`netstat -anp | grep httpd | grep ESTABLISHED | wc -l`
+
+zarafa_connections=$[ 0 + $imap_connections + $outlook_connections + $webmail_connections ]
+
+echo zarafa_connections.value $zarafa_connections
+echo imap_connections.value $imap_connections
+echo outlook_connections.value $outlook_connections
+echo webmail_connections.value $webmail_connections

@@ -1,0 +1,3 @@
+[cpubyuser]
+env.USERS root
+others.graph yes

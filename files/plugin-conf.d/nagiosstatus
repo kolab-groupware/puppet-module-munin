@@ -1,0 +1,3 @@
+[nagiosstatus]
+user root
+statuslog /var/log/nagios/status.dat

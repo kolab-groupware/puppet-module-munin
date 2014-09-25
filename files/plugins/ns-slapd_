@@ -1,0 +1,55 @@
+#!/usr/bin/perl
+#
+# Plugin to monitor Netscape compatible LDAP server statistics.
+#
+# Copyright (c) 2011 Jeroen "kanarip" van Meeuwen <kanarip@kanarip.com>
+#
+# This plugin requires perl-LDAP.
+#
+# Magic markers
+#%# family=auto
+#%# capabilities=autoconf
+#%# capabilities=suggest
+
+use strict;
+use LDAP;
+
+my $monitor_dn = defined $ENV{'monitor_dn'} ? $ENV{'monitor_dn'} : "cn=monitor,cn=ldbm database,cn=plugins,cn=config";
+my $bind_dn = defined $ENV{'bind_dn'} ? $ENV{'bind_dn'} : "cn=Directory Manager";
+my $bind_pw = defined $ENV{'bind_pw'} ? $ENV{'bind_pw'} : "";
+
+# Generic functions autoconf and suggest
+if ($ARGV[0] and $ARGV[0] eq "autoconf") {
+    if (not `which ldapsearch >/dev/null 2>&1`) {
+        print "yes\n";
+        exit 0;
+    } else {
+        print "no (ldapsearch not found)\n";
+        exit 1;
+    }
+} elsif ($ARGV[0] and $ARGV[0] eq "suggest") {
+    print "dbcachehits\n";
+    print "dbcachetries\n";
+    print "dbcachehitratio\n";
+    exit 0;
+}
+
+my $stats_type = "";
+
+if ($0 =~ /^(?:|.*\/)ns-slapd_([a-z]+)$/) {
+    $stats_type = $1;
+} else {
+    print "You need to create a symlink to this plugin. See suggest for options.\n";
+    exit 2;
+}
+
+# Function config
+if ($ARGV[0] and $ARGV[0] eq "config") {
+    if ($stats_type eq "dbcachehits") {
+    } elsif ($stats_type eq "dbcachetries") {
+    } elsif ($stats_type eq "dbcachehitratio") {
+    } else {
+        print "You need to create a symlink to this plugin. See suggest for options.\n";
+        exit 2;
+    }
+}

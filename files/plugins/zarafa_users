@@ -1,0 +1,41 @@
+#!/bin/bash
+#
+# Copyright 2009 (C) Operator Groep Delft, http://www.ogd.nl
+#
+# Author(s):
+#     Jeroen van Meeuwen <j.van.meeuwen@ogd.nl>
+#     Sandro Janke <s.janke@ogd.nl>
+#
+# This (tiny) piece of "software" is GPLv3+
+#
+# Tracks the actual number of users (rather then connections) on a Zarafa
+# server, by using 1) unique IP address or 2) unique usernames (http basic auth)
+#
+
+case $1 in
+    config)
+        cat <<'EOM'
+graph_category Zarafa
+graph_title Zarafa Users
+graph_vlabel users
+zarafa_users.label zarafa users
+imap_users.label imap users
+outlook_users.label outlook users
+webmail_users.label webmail users
+ActiveSync_users.label ActiveSync users
+EOM
+        exit 0
+    ;;
+esac
+
+imap_users=`netstat -anp | grep zarafa-gatewa | grep ESTABLISHED | awk '{print $5}' | cut -d':' -f1 | sort -u | wc -l`
+outlook_users=`netstat -anp | grep zarafa-server | grep ESTABLISHED | awk '{print $5}' | cut -d':' -f1 | sort -u | wc -l`
+webmail_users=`grep -E "($(date +'%d/%b/%Y:%H')|$(date --date='1 hour ago' +'%d/%b/%Y:%H'))" /var/log/httpd/webmail.ogd.nl-access_log | grep -v 'ActiveSync' | awk '{print $1}' | sort -u | wc -l`
+ActiveSync_users=`grep -E "($(date +'%d/%b/%Y:%H')|$(date --date='1 hour ago' +'%d/%b/%Y:%H'))" /var/log/httpd/webmail.ogd.nl-access_log | grep 'ActiveSync' | awk '{print $3}' | sort -u | wc -l`
+zarafa_users=$[ 0 + $imap_users + $outlook_users + $webmail_users + $ActiveSync_users ]
+
+echo zarafa_users.value $zarafa_users
+echo imap_users.value $imap_users
+echo outlook_users.value $outlook_users
+echo webmail_users.value $webmail_users
+echo ActiveSync_users.value $ActiveSync_users

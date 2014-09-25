@@ -1,0 +1,88 @@
+#!/bin/sh
+
+# Copyright (C) 2009 Andreas Thienemann <andreas@bawue.net>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU Library General Public License as published by
+# the Free Software Foundation; version 2 only
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Library General Public License for more details.
+#
+# You should have received a copy of the GNU Library General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+#
+
+#
+# Plugin to monitor the load on a cyrus imapd server
+#
+# Usage: Link or copy into the munin-node plugin directory
+#
+# Installation node: Should most likely run as root:
+# [cyrus-imapd]
+# user root
+#
+#
+# Magic markers (optional - only used by munin-config and some
+# installation scripts):
+#
+#%# family=contrib
+#%# capabilities=autoconf
+
+BASEPARAM=`basename $0 | sed -r -e 's/^cyrus-imapd_//'`
+MODE=`echo $BASEPARAM | sed -r -e 's/^(.*)_.*/\1/'`
+TARGET=`echo $BASEPARAM | sed -r -e 's/^(partition|mbox|logins)//' -e 's/_//'`
+
+case $1 in
+    config)
+        echo "graph_category cyrus"
+        if [ "$MODE" == "partition" ]; then
+            exit 1
+        elif [ "$MODE" == "mbox" ]; then
+            echo "graph_title Mailboxes"
+            echo "graph_vlabel mailboxes"
+            echo "graph_order mailboxes mailboxes_deleted mailboxes_total"
+            echo "graph_args --units-exponent 0"
+            echo "graph_scale no"
+            echo "mailboxes.label Mailboxes"
+            echo "mailboxes_deleted.label Deleted Mailboxes"
+            echo "mailboxes_total.label Total"
+        elif [ "$MODE" == "logins" ]; then
+            echo "graph_title Number of Logins"
+            echo "graph_vlabel logins"
+            echo "graph_period minute"
+            echo "graph_order logins_success logins_failed"
+            echo "logins_success.label Success"
+            echo "logins_success.type DERIVE"
+            echo "logins_success.min 0"
+            echo "logins_failed.label Failed"
+            echo "logins_failed.type DERIVE"
+            echo "logins_failed.min 0"
+        fi
+        exit 0
+    ;;
+
+    autoconf)
+        echo "yes"
+        exit 0
+    ;;
+esac
+
+if [ "$MODE" == "mbox" ]; then
+    if [ -z "$TARGET" ]; then
+        mailboxes_deleted=`/usr/lib/cyrus-imapd/ctl_mboxlist -d | grep -E '^[-a-zA-Z0-9\.]*!DELETED\.(user|shared)\.[-\^\$\#_a-zA-Z0-9\+]+' | sed -r -e 's/([-a-zA-Z0-9\.]*)\!DELETED\.(user|shared)\.([-\^\$\#_a-zA-Z0-9\+]+)\.+.*[0-9A-F]{8}.*\s+[0-1]{1}\s+.*\s+(.*)/\3@\1/g' | sort -u | wc -l`
+        mailboxes=`/usr/lib/cyrus-imapd/ctl_mboxlist -d | grep -vE '^[-a-zA-Z0-9\.]*!DELETED\.(user|shared)\.[-\^\$\#_a-zA-Z0-9\+]+' | sed -r -e 's/([-a-zA-Z0-9\.]+)!(user|shared)\.([-\^\$\#_a-zA-Z0-9\+]+)(\.|\s+).*/\3@\1/g' | sort -u | wc -l`
+        echo "mailboxes.value $mailboxes"
+        echo "mailboxes_deleted.value $mailboxes_deleted"
+        echo "mailboxes_total.value $( echo $[ $mailboxes + $mailboxes_deleted ] )"
+    fi
+elif [ "$MODE" == "logins" ]; then
+    success=`grep "User logged in" /var/log/maillog | wc -l`
+    failed=`grep -E "badlogin:.*authentication failure" /var/log/maillog | wc -l`
+    echo "logins_success.value ${success}"
+    echo "logins_failed.value ${failed}"
+fi
+

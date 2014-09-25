@@ -1,0 +1,265 @@
+# Managed by puppet
+
+dbdir   /var/lib/munin
+htmldir /var/www/html/munin
+logdir  /var/log/munin
+rundir  /var/run/munin
+
+tmpldir /etc/munin/templates
+
+html_strategy cgi
+graph_strategy cgi
+
+cgiurl_graph /munin/cgi-bin/graph.cgi
+
+includedir /etc/munin/node.d/
+
+contacts nagios
+contact.nagios.command /usr/sbin/send_nsca -H localhost -c /etc/nagios/send_nsca.cfg
+contact.nagios.always_send ok warning critical unknown
+
+<%
+    ['development', 'testing', 'production'].each do |environ|
+        backends = scope.function_nodes_with_class_in_environment([environ, 'kolab::imap::backend']).sort.uniq
+        frontends = scope.function_nodes_with_class_in_environment([environ, 'kolab:imap::frontend']).sort.uniq
+        smtps = scope.function_nodes_with_class_in_environment([environ, 'kolab::mx']).sort.uniq
+        webs = scope.function_nodes_with_class_in_environment([environ, 'kolab::webmail']).sort.uniq
+%>
+<% if frontends.length > 0 || backends.length > 0 %>
+[<%= environ -%>;lhm.klab.cc;imap]
+    update no
+
+    <% if backends.length > 0 %>
+    mailboxes_mixed.graph_category cyrus
+    mailboxes_mixed.graph_title Mailboxes Mixed
+    mailboxes_mixed.graph_args --units-exponent 0
+    mailboxes_mixed.graph_scale no
+    mailboxes_mixed.graph_order <% backends.each do |h| %><% hostname, *domain = h.split('.') -%><%= h -%>=<%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:cyrus_imapd_mbox.mailboxes_total <% end %>
+    mailboxes_mixed.update no
+
+    mailboxes_summed.graph_category cyrus
+    mailboxes_summed.graph_title Mailboxes Summed
+    mailboxes_summed.graph_args --units-exponent 0
+    mailboxes_summed.graph_scale no
+    mailboxes_summed.graph_order total
+    mailboxes_summed.total.sum <% backends.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:cyrus_imapd_mbox.mailboxes_total <% end %>
+    mailboxes_summed.total.label Total
+    mailboxes_summed.update no
+
+    imap_luns_mixed.graph_category disk
+    imap_luns_mixed.graph_title IMAP LUN Disk Space Mixed
+    imap_luns_mixed.graph_order <% backends.each do |h| %><% hostname, *domain = h.split('.') -%><%= hostname -%>=<%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:df_abs._dev_mapper_vg_imap_lv_imap__srv_imap <% end %>
+    imap_luns_mixed.update no
+<% backends.each do |host| -%>
+    imap_luns_mixed.<%= host.split('.')[0] -%>.cdef <%= host.split('.')[0] -%>,1024,*
+<% end -%>
+
+    imap_luns_summed.graph_category disk
+    imap_luns_summed.graph_title IMAP LUN Disk Space Total
+    imap_luns_summed.graph_order total
+    imap_luns_summed.total.sum <% backends.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:df_abs._dev_mapper_vg_imap_lv_imap__srv_imap <% end %>
+    imap_luns_summed.update no
+    imap_luns_summed.total.label Total
+    imap_luns_summed.total.cdef total,1024,*
+<% end -%>
+
+    <% if frontends.length > 0 %>
+    cyrus_murder_logins_sum.graph_category cyrus
+    cyrus_murder_logins_sum.graph_title Logins Summed
+    cyrus_murder_logins_sum.graph_order murder_logins_success murder_logins_failed
+    cyrus_murder_logins_sum.graph_vlabel logins/min
+    cyrus_murder_logins_sum.update no
+    cyrus_murder_logins_sum.graph_period minute
+    cyrus_murder_logins_sum.murder_logins_success.label Success
+    cyrus_murder_logins_sum.murder_logins_failed.label Failed
+    cyrus_murder_logins_sum.murder_logins_success.sum <% frontends.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:cyrus_imapd_logins.logins_success <% end %>
+    cyrus_murder_logins_sum.murder_logins_failed.sum <% frontends.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:cyrus_imapd_logins.logins_failed <% end %>
+
+    cyrus_murder_load.graph_category cyrus
+    cyrus_murder_load.graph_title Loads
+    cyrus_murder_load.graph_order connections authenticated_users unique_users
+    cyrus_murder_load.graph_vlabel connections
+    cyrus_murder_load.update no
+    cyrus_murder_load.connections.label Connections
+    cyrus_murder_load.authenticated_users.label Authenticated Users
+    cyrus_murder_load.unique_users.label Unique Users
+    cyrus_murder_load.connections.sum <% frontends.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:cyrus_load.connections <% end %>
+    cyrus_murder_load.authenticated_users.sum <% frontends.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:cyrus_load.authenticated_users <% end %>
+    cyrus_murder_load.unique_users.sum <% frontends.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:cyrus_load.unique_users <% end %>
+    <% end %>
+<% end %>
+
+<% if smtps.length > 0 %>
+[<%= environ -%>;lhm.klab.cc;smtp]
+    update no
+
+    postfix_mailqueue_sum.graph_category postfix
+    postfix_mailqueue_sum.graph_title MailQ Summed
+    postfix_mailqueue_sum.graph_order active deferred maildrop incoming corrupt held
+    postfix_mailqueue_sum.graph_vlabel Mails in Queue
+    postfix_mailqueue_sum.update no
+    postfix_mailqueue_sum.active.label active
+    postfix_mailqueue_sum.deferred.label deferred
+    postfix_mailqueue_sum.maildrop.label maildrop
+    postfix_mailqueue_sum.incoming.label incoming
+    postfix_mailqueue_sum.corrupt.label corrupt
+    postfix_mailqueue_sum.held.label held
+    postfix_mailqueue_sum.active.sum <% smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:postfix_mailqueue.active <% end %>
+    postfix_mailqueue_sum.deferred.sum <% smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:postfix_mailqueue.deferred <% end %>
+    postfix_mailqueue_sum.maildrop.sum <% smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:postfix_mailqueue.maildrop <% end %>
+    postfix_mailqueue_sum.incoming.sum <% smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:postfix_mailqueue.incoming <% end %>
+    postfix_mailqueue_sum.corrupt.sum <% smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:postfix_mailqueue.corrupt <% end %>
+    postfix_mailqueue_sum.held.sum <% smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:postfix_mailqueue.hold <% end %>
+
+    postfix_mailstats_sum.graph_category postfix
+    postfix_mailstats_sum.graph_title Messages Delivered
+    postfix_mailstats_sum.graph_order delivered
+    postfix_mailstats_sum.graph_vlabel mails/minute
+    postfix_mailstats_sum.graph_period minute
+    postfix_mailstats_sum.update no
+    postfix_mailstats_sum.delivered.label delivered
+    postfix_mailstats_sum.delivered.sum <% smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:postfix_mailstats.delivered <% end %>
+
+    amavis_agent_timeelapsed.graph_category amavis
+    amavis_agent_timeelapsed.graph_title Amavis scanning times
+    amavis_agent_timeelapsed.graph_order decoding receiving sending spamcheck viruscheck total
+    amavis_agent_timeelapsed.graph_vlabel Scan action times per message
+    amavis_agent_timeelapsed.graph_args --base 1000 -l 0
+    amavis_agent_timeelapsed.graph_scale no
+    amavis_agent_timeelapsed.update no
+    amavis_agent_timeelapsed.decoding.label Decoding
+    amavis_agent_timeelapsed.receiving.label Receiving
+    amavis_agent_timeelapsed.sending.label Sending
+    amavis_agent_timeelapsed.spamcheck.label Spam Check
+    amavis_agent_timeelapsed.viruscheck.label Virus Check
+    amavis_agent_timeelapsed.total.label Total
+    amavis_agent_timeelapsed.decoding.type DERIVE
+    amavis_agent_timeelapsed.receiving.type DERIVE
+    amavis_agent_timeelapsed.sending.type DERIVE
+    amavis_agent_timeelapsed.spamcheck.type DERIVE
+    amavis_agent_timeelapsed.viruscheck.type DERIVE
+    amavis_agent_timeelapsed.total.type DERIVE
+    amavis_agent_timeelapsed.decoding.min 0
+    amavis_agent_timeelapsed.receiving.min 0
+    amavis_agent_timeelapsed.sending.min 0
+    amavis_agent_timeelapsed.spamcheck.min 0
+    amavis_agent_timeelapsed.viruscheck.min 0
+    amavis_agent_timeelapsed.total.min 0
+    amavis_agent_timeelapsed.decoding.draw AREASTACK
+    amavis_agent_timeelapsed.receiving.draw AREASTACK
+    amavis_agent_timeelapsed.sending.draw AREASTACK
+    amavis_agent_timeelapsed.spamcheck.draw AREASTACK
+    amavis_agent_timeelapsed.viruscheck.draw AREASTACK
+    amavis_agent_timeelapsed.total.draw AREASTACK
+    amavis_agent_timeelapsed.decoding.sum <% smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:amavisd_agent_timeelapsed.Decoding <% end %>
+    amavis_agent_timeelapsed.receiving.sum <% smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:amavisd_agent_timeelapsed.Receiving <% end %>
+    amavis_agent_timeelapsed.sending.sum <% smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:amavisd_agent_timeelapsed.Sending <% end %>
+    amavis_agent_timeelapsed.spamcheck.sum <% smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:amavisd_agent_timeelapsed.SpamCheck <% end %>
+    amavis_agent_timeelapsed.viruscheck.sum <% smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:amavisd_agent_timeelapsed.VirusCheck <% end %>
+    amavis_agent_timeelapsed.total.sum <% smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:amavisd_agent_timeelapsed.Total <% end %>
+    amavis_agent_timeelapsed.decoding.cdef decoding,<%= smtps.length -%>,/
+    amavis_agent_timeelapsed.receiving.cdef receiving,<%= smtps.length -%>,/
+    amavis_agent_timeelapsed.sending.cdef sending,<%= smtps.length -%>,/
+    amavis_agent_timeelapsed.spamcheck.cdef spamcheck,<%= smtps.length -%>,/
+    amavis_agent_timeelapsed.viruscheck.cdef viruscheck,<%= smtps.length -%>,/
+    amavis_agent_timeelapsed.total.cdef total,<%= smtps.length -%>,/
+<% end %>
+
+<% if webs.length > 0 %>
+[<%= environ -%>;lhm.klab.cc;web]
+    update no
+
+    apache_accesses_sum.graph_category apache
+    apache_accesses_sum.graph_title Accesses Summed
+    apache_accesses_sum.graph_order accesses80
+    apache_accesses_sum.graph_vlabel accesses/second
+    apache_accesses_sum.update no
+    apache_accesses_sum.accesses80.label port 80
+    apache_accesses_sum.accesses80.sum <% webs.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%=domain.join('.') -%>;<%= hostname -%>:apache_accesses.accesses80 <% end %>
+
+    apache_processes_sum.graph_category apache
+    apache_processes_sum.graph_title Processes Summed
+    apache_processes_sum.graph_order busy idle free
+    apache_processes_sum.graph_vlabel processes
+    apache_processes_sum.update no
+    apache_processes_sum.busy.label Busy
+    apache_processes_sum.busy.draw AREASTACK
+    apache_processes_sum.busy.colour 33cc00
+    apache_processes_sum.idle.label Idle
+    apache_processes_sum.idle.draw AREASTACK
+    apache_processes_sum.idle.colour 0033ff
+    apache_processes_sum.free.label Free
+    apache_processes_sum.free.draw AREASTACK
+    apache_processes_sum.free.colour ccff00
+    apache_processes_sum.busy.sum <% webs.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%=domain.join('.') -%>;<%= hostname -%>:apache_processes.busy80 <% end %>
+    apache_processes_sum.idle.sum <% webs.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%=domain.join('.') -%>;<%= hostname -%>:apache_processes.idle80 <% end %>
+    apache_processes_sum.free.sum <% webs.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%=domain.join('.') -%>;<%= hostname -%>:apache_processes.free80 <% end %>
+
+    mem.graph_category system
+    mem.graph_title Memory usage
+    mem.graph_args --base 1024 -l 0 --upper-limit 8252354560
+    mem.graph_info This graph shows what the machine uses memory for.
+    mem.graph_order apps page_tables swap_cache slab cached buffers free swap
+    mem.graph_vlabel Bytes
+    mem.update no
+    mem.apps.label apps
+    mem.apps.draw AREA
+    mem.apps.info Memory used by user-space applications.
+    mem.buffers.label buffers
+    mem.buffers.draw STACK
+    mem.buffers.info Block device (e.g. harddisk) cache. Also where "dirty" blocks are stored until written.
+    mem.swap.label swap
+    mem.swap.draw STACK
+    mem.swap.info Swap space used.
+    mem.cached.label cache
+    mem.cached.draw STACK
+    mem.cached.info Parked file data (file content) cache.
+    mem.free.label unused
+    mem.free.draw STACK
+    mem.free.info Wasted memory. Memory that is not used for anything at all.
+    mem.slab.label slab_cache
+    mem.slab.draw STACK
+    mem.slab.info Memory used by the kernel (major users  are caches like inode, dentry, etc).
+    mem.swap_cache.label swap_cache
+    mem.swap_cache.draw STACK
+    mem.swap_cache.info A piece of memory that keeps track of pages that have been fetched from swap but not yet been modified.
+    mem.page_tables.label page_tables
+    mem.page_tables.draw STACK
+    mem.page_tables.info Memory used to map between virtual and physical memory addresses.
+    mem.vmalloc_used.label vmalloc_used
+    mem.vmalloc_used.draw LINE2
+    mem.vmalloc_used.info 'VMalloc' (kernel) memory used
+    mem.committed.label committed
+    mem.committed.draw LINE2
+    mem.committed.info The amount of memory allocated to programs. Overcommitting is normal, but may indicate memory leaks.
+    mem.mapped.label mapped
+    mem.mapped.draw LINE2
+    mem.mapped.info All mmap()ed pages.
+    mem.active.label active
+    mem.active.draw LINE2
+    mem.active.info Memory recently used. Not reclaimed unless absolutely necessary.
+    mem.inactive.label inactive
+    mem.inactive.draw LINE2
+    mem.inactive.info Memory not currently used.
+<%  [ 'apps', 'page_tables', 'swap_cache', 'slab_cache', 'cache', 'buffers', 'unused', 'swap', 'vmalloc_used', 'committed', 'mapped', 'active', 'inactive' ].each do |t| -%>
+    mem.<%= t -%>.sum <% webs.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%=domain.join('.') -%>;<%= hostname -%>:memory.<%= t -%> <% end %>
+<% end -%>
+
+    roundcubemail.graph_category roundcubemail
+    roundcubemail.graph_title Action Completion Duration
+    roundcubemail.graph_args --base 1000 -l 0
+    roundcubemail.graph_info Average times reported for actions.
+    roundcubemail.graph_order mail_preview calendar_load_events files_index mail_send
+    roundcubemail.graph_vlabel Bytes
+    roundcubemail.update no
+    roundcubemail.mail_preview.label mail/preview
+    roundcubemail.calendar_load_events.label calendar/load_events
+    roundcubemail.files_index.label files/index
+    roundcubemail.mail_send.label mail_send
+<%  [ 'mail_preview', 'calendar_load_events', 'files_index', 'mail_send' ].each do |t| -%>
+    roundcubemail.<%= t -%>.sum <% webs.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%=domain.join('.') -%>;<%= hostname -%>:roundcubemail.<%= t -%>.<%= t -%> <% end %>
+    roundcubemail.<%= t -%>.cdef <%= t -%>,<%= webs.length -%>,/
+<% end %>
+
+<% end %>
+<% end %>
