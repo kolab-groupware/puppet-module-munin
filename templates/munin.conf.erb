@@ -110,6 +110,7 @@ contact.nagios.always_send ok warning critical unknown
     postfix_mailqueue_sum.incoming.sum <% smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:postfix_mailqueue.incoming <% end %>
     postfix_mailqueue_sum.corrupt.sum <% smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:postfix_mailqueue.corrupt <% end %>
     postfix_mailqueue_sum.held.sum <% smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:postfix_mailqueue.hold <% end %>
+    postfix_mailqueue_sum.total.sum <% ["active", "deferred", "maildrop", "incoming", "corrupt", "hold"].each do |q| smtps.each do |h| %><% hostname, *domain = h.split('.') -%><%= environ -%>;<%= domain.join('.') -%>;<%= hostname -%>:postfix_mailqueue.<%= q -%> <% end -%> <% end %>
 
     postfix_mailstats_sum.graph_category postfix
     postfix_mailstats_sum.graph_title Messages Delivered
